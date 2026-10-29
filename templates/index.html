@@ -1,4 +1,4 @@
-<!DOCTYPE html><html><head><meta charset="UTF-8"><title>ULTRON // CVE Scanner</title>
+ï»¿<!DOCTYPE html><html><head><meta charset="UTF-8"><title>ULTRON // CVE Scanner</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;font-family:'Courier New',monospace}
 body{background:#0a0a0f;color:#d0d0d0;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px}
@@ -65,7 +65,7 @@ es.onmessage=ev=>{const m=JSON.parse(ev.data);
 if(m.type==='log'){log(m.msg);
 if(m.msg.includes('Running:'))setProgress(30,'nmap scanning...');
 if(m.msg.includes('Done')||m.msg.includes('complete'))setProgress(90,'parsing CVE data...');
-if(m.msg.includes('timeout'))setProgress(90,'timeout — generating report...')}
+if(m.msg.includes('timeout'))setProgress(90,'timeout â€” generating report...')}
 else if(m.type==='done'){setProgress(100,'complete');
 document.getElementById('scanBtn').disabled=false;es.close();
 let sp=`Scan complete. Risk level: ${m.risk}. `;
@@ -76,7 +76,7 @@ const warn=m.error?`<div style="color:#ff6600;font-size:11px;text-align:center;m
 let cveHtml='';
 if(m.cves&&m.cves.length>0){cveHtml='<div class="cve-list">';
 m.cves.forEach(c=>{const cls=c.cvss>=9?'crit':c.cvss>=7?'high':'';
-cveHtml+=`<div class="cve-item ${cls}">[${c.cvss}] ${c.cve} — port ${c.port} (${c.service})</div>`});
+cveHtml+=`<div class="cve-item ${cls}">[${c.cvss}] ${c.cve} â€” port ${c.port} (${c.service})</div>`});
 cveHtml+='</div>'}
 document.getElementById('results').innerHTML=`
 <div class="result-card risk-${m.risk}">
