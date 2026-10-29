@@ -1,0 +1,95 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><title>ULTRON // CVE Scanner</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Courier New',monospace}
+body{background:#0a0a0f;color:#d0d0d0;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px}
+h1{color:#cc0000;letter-spacing:6px;font-size:28px;margin-bottom:6px}
+.sub{color:#777;letter-spacing:3px;font-size:11px;margin-bottom:28px}
+.card{background:#14141a;border:1px solid #2a2a35;border-radius:8px;padding:22px;width:100%;max-width:680px;margin-bottom:18px}
+.controls{display:flex;gap:8px;margin-bottom:12px}
+input[type="text"]{flex:1;background:#0a0a0f;border:1px solid #2a2a35;color:#d0d0d0;padding:12px;font-size:13px;border-radius:4px;outline:none}
+input[type="text"]:focus{border-color:#cc0000}
+button{background:#cc0000;color:#fff;border:none;padding:12px 24px;font-weight:bold;letter-spacing:1.5px;cursor:pointer;border-radius:4px;font-size:12px}
+button:hover:not(:disabled){background:#e60000}button:disabled{background:#333;color:#666;cursor:not-allowed}
+.profile-row{display:flex;gap:18px;font-size:11px;color:#888}.profile-row input[type="radio"]{accent-color:#cc0000}
+#progressWrap{width:100%;max-width:680px;margin-bottom:18px;display:none}#progressWrap.active{display:block}
+.progress-bar{height:20px;background:#0a0a0f;border:1px solid #2a2a35;border-radius:4px;position:relative;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,#cc0000,#ff4400);width:0%;transition:width .3s ease}
+.progress-text{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:#fff;text-shadow:0 0 4px #000;letter-spacing:1px}
+#log{width:100%;max-width:680px;background:#000;border:1px solid #2a2a35;border-radius:4px;padding:12px;font-size:11px;color:#00ff88;min-height:44px;white-space:pre-wrap;margin-bottom:18px}
+#results{width:100%;max-width:680px}
+.result-card{border:1px solid #2a2a35;border-radius:8px;background:#14141a;padding:22px}
+.result-card.risk-CRITICAL{border-color:#cc0000}.result-card.risk-HIGH{border-color:#ff6600}
+.result-card.risk-MEDIUM{border-color:#ffaa00}.result-card.risk-LOW{border-color:#00aa44}
+.risk-badge{font-size:20px;letter-spacing:3px;font-weight:bold;margin-bottom:12px;text-align:center}
+.risk-CRITICAL .risk-badge{color:#ff2200}.risk-HIGH .risk-badge{color:#ff6600}
+.risk-MEDIUM .risk-badge{color:#ffaa00}.risk-LOW .risk-badge{color:#00cc55}
+.stats{display:flex;justify-content:space-around;margin:16px 0;font-size:12px}.stat{text-align:center}
+.stat .num{font-size:20px;font-weight:bold;display:block}
+.stat.critical .num{color:#ff2200}.stat.high .num{color:#ff6600}.stat.medium .num{color:#ffaa00}.stat.low .num{color:#888}
+.pdf-btn{display:block;text-align:center;margin-top:16px;padding:12px;background:#cc0000;color:#fff;text-decoration:none;font-weight:bold;letter-spacing:1.5px;border-radius:4px;font-size:12px}
+.pdf-btn:hover{background:#e60000}
+.cve-list{max-height:200px;overflow-y:auto;margin-top:12px;font-size:11px;border-top:1px solid #2a2a35;padding-top:10px}
+.cve-item{padding:3px 0;color:#bbb}.cve-item.crit{color:#ff5555}.cve-item.high{color:#ffaa00}
+</style></head><body>
+<h1>U L T R O N</h1><div class="sub">NMAP + VULNERS CVE SCANNER</div>
+<div class="card"><div class="controls">
+<input type="text" id="target" placeholder="scanme.nmap.org"/>
+<button id="scanBtn" onclick="start()">SCAN</button></div>
+<div class="profile-row">
+<label><input type="radio" name="profile" value="fast" checked> Fast (top 100 + CVE, 5-25s)</label>
+<label><input type="radio" name="profile" value="full"> Full (all ports + CVE, 60-180s)</label>
+</div></div>
+<div id="progressWrap"><div class="progress-bar"><div class="progress-fill" id="progressFill"></div>
+<div class="progress-text" id="progressText">waiting...</div></div></div>
+<div id="log">&gt;&gt; Ready. Enter target and click SCAN.</div><div id="results"></div>
+<script>
+let es=null; let voices=[];
+if('speechSynthesis' in window){speechSynthesis.onvoiceschanged=()=>{voices=speechSynthesis.getVoices()};voices=speechSynthesis.getVoices()}
+function speak(text){if(!('speechSynthesis' in window))return;speechSynthesis.cancel();
+const u=new SpeechSynthesisUtterance(text);
+const v=voices.find(x=>/Google UK English Male|Daniel/i.test(x.name))||voices[0];
+if(v)u.voice=v;u.rate=0.85;u.pitch=0.6;speechSynthesis.speak(u)}
+function log(t){document.getElementById('log').textContent=t}
+function setProgress(p,text){document.getElementById('progressWrap').classList.add('active');
+document.getElementById('progressFill').style.width=p+'%';document.getElementById('progressText').textContent=text}
+async function start(){
+const t=document.getElementById('target').value.trim();
+if(!t){log('!! Target required');return}
+const profile=document.querySelector('input[name="profile"]:checked').value;
+document.getElementById('scanBtn').disabled=true;document.getElementById('results').innerHTML='';
+setProgress(10,'starting nmap + vulners...');log('>> Starting CVE scan on '+t);
+speak('Starting CVE scan on '+t);
+const resp=await fetch('/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target:t,profile})});
+const {job_id}=await resp.json();if(es)es.close();es=new EventSource('/stream/'+job_id);
+es.onmessage=ev=>{const m=JSON.parse(ev.data);
+if(m.type==='log'){log(m.msg);
+if(m.msg.includes('Running:'))setProgress(30,'nmap scanning...');
+if(m.msg.includes('Done')||m.msg.includes('complete'))setProgress(90,'parsing CVE data...');
+if(m.msg.includes('timeout'))setProgress(90,'timeout — generating report...')}
+else if(m.type==='done'){setProgress(100,'complete');
+document.getElementById('scanBtn').disabled=false;es.close();
+let sp=`Scan complete. Risk level: ${m.risk}. `;
+sp+=`${m.total} CVEs found: ${m.critical} critical, ${m.high} high, ${m.medium} medium. `;
+if(m.cves&&m.cves.length>0)sp+=`Top finding: ${m.cves[0].cve} with CVSS ${m.cves[0].cvss}.`;
+speak(sp);
+const warn=m.error?`<div style="color:#ff6600;font-size:11px;text-align:center;margin-top:8px">${m.error}</div>`:'';
+let cveHtml='';
+if(m.cves&&m.cves.length>0){cveHtml='<div class="cve-list">';
+m.cves.forEach(c=>{const cls=c.cvss>=9?'crit':c.cvss>=7?'high':'';
+cveHtml+=`<div class="cve-item ${cls}">[${c.cvss}] ${c.cve} — port ${c.port} (${c.service})</div>`});
+cveHtml+='</div>'}
+document.getElementById('results').innerHTML=`
+<div class="result-card risk-${m.risk}">
+<div class="risk-badge">${m.risk} RISK</div>
+<div style="text-align:center;color:#888;font-size:11px">completed in ${m.duration}s</div>
+<div class="stats">
+<div class="stat critical"><span class="num">${m.critical}</span>CRIT</div>
+<div class="stat high"><span class="num">${m.high}</span>HIGH</div>
+<div class="stat medium"><span class="num">${m.medium}</span>MED</div>
+<div class="stat low"><span class="num">${m.low}</span>LOW</div></div>
+${warn}${cveHtml}
+<a class="pdf-btn" href="/download/${m.pdf}">DOWNLOAD PDF REPORT</a></div>`;
+log('>> Complete. '+m.total+' CVEs in '+m.duration+'s.')}
+else if(m.type==='error'){log('!! '+m.msg);setProgress(100,'error');
+document.getElementById('scanBtn').disabled=false;es.close();speak('Scan failed.')}}}
+</script></body></html>
