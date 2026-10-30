@@ -15,17 +15,24 @@ class NmapScanner:
         if not shutil.which("nmap"):
             return {"error": "nmap binary not found in PATH", "hosts": [], "cves": [], "duration": 0}
 
+        # PROFESSIONAL FLAGS:
+        # -sT: TCP connect (works everywhere)
+        # -sV: Deep version detection
+        # -sC: Run default safe scripts
+        # --script vulners: Deep CVE lookup
+        # -T4: Aggressive timing
+        # -O: OS Detection (if privileges allow)
         if profile == "full":
-            args = ["nmap","-sT","-sV","--script","vulners","-Pn","-T4","--open","-oX","-",self.target]
-            budget = 300
-            self._log("Profile: FULL (all ports + CVE scan)")
+            args = ["nmap", "-sT", "-sV", "-sC", "-O", "--script", "vulners", "-Pn", "-T4", "--open", "-oX", "-", self.target]
+            budget = 400
+            self._log("Profile: PROFESSIONAL FULL (OS + Deep Scripts + CVE)")
         else:
-            args = ["nmap","-sT","-F","-sV","--script","vulners",
-                    "--script-args","mincvss=7.0",
-                    "-Pn","-T4","--max-rtt-timeout","300ms",
-                    "--max-retries","1","-n","--open","-oX","-",self.target]
-            budget = 45
-            self._log("Profile: FAST (top 100 ports + CVE)")
+            args = ["nmap", "-sT", "-sV", "-sC", "--script", "vulners",
+                    "--script-args", "mincvss=5.0",
+                    "-Pn", "-T4", "--max-rtt-timeout", "500ms",
+                    "--max-retries", "2", "-n", "--open", "-oX", "-", self.target]
+            budget = 60
+            self._log("Profile: PROFESSIONAL FAST (Deep Scripts + CVE)")
 
         self._log("Running: " + " ".join(args))
         try:
@@ -37,7 +44,7 @@ class NmapScanner:
                 proc.kill()
                 out, err = proc.communicate()
                 self._log(f"Nmap killed after {budget}s")
-                return {"error": f"Nmap exceeded {budget}s. Target may be offline or firewalled.",
+                return {"error": f"Nmap exceeded {budget}s. Target is heavily firewalled.",
                         "hosts": [], "cves": [], "duration": round(time.time()-self.start,1)}
         except FileNotFoundError:
             return {"error": "nmap binary not found",
@@ -56,16 +63,26 @@ class NmapScanner:
                 status = host.find("status")
                 if status is not None and status.get("state") != "up":
                     continue
+                
+                # Get IP and OS
                 addr = host.find("address")
                 ip = addr.get("addr") if addr is not None else "unknown"
+                
+                os_match = host.find(".//osmatch")
+                os_name = os_match.get("name") if os_match is not None else "Unknown OS"
+
                 ports = []
                 for p in host.findall(".//port"):
                     state = p.find("state")
                     if state is None or state.get("state") != "open":
                         continue
                     svc = p.find("service")
+                    
+                    port_str = p.get("port")
+                    if not port_str: continue
+                    
                     port_data = {
-                        "port": int(p.get("port")),
+                        "port": int(port_str),
                         "protocol": p.get("protocol", "tcp"),
                         "service": (svc.get("name","?") if svc is not None else "?"),
                         "product": (svc.get("product","") if svc is not None else ""),
@@ -91,7 +108,7 @@ class NmapScanner:
                                             "port": port_data["port"],
                                             "service": port_data["service"],
                                         })
-                hosts.append({"ip": ip, "ports": ports})
+                hosts.append({"ip": ip, "os": os_name, "ports": ports})
         except ET.ParseError as e:
             self._log(f"XML parse error: {e}")
         return hosts, cves
