@@ -1,18 +1,15 @@
-﻿# Use Alpine Linux (super small and fast)
-FROM alpine:3.19
+﻿FROM python:3.11-slim
 
-# Install Python, pip, and Nmap directly from Alpine's official repository (takes 5 seconds)
-RUN apk add --no-cache python3 py3-pip nmap
+# Install Nmap + NSE scripts + Python deps in ONE layer (Debian slim has full nmap scripts)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nmap \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
-# Install Python dependencies
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your code
 COPY . .
 
-# Run with Gunicorn
-EXPOSE 10000
-CMD ["gunicorn", "--bind", "0.0.0.0:10000", "ultron:app"]
+# Use PORT env Render provides
+CMD gunicorn --bind 0.0.0.0:$PORT ultron:app
