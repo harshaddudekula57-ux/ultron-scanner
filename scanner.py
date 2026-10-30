@@ -15,7 +15,7 @@ class NmapScanner:
             args=["nmap","-sV","--script","vulners","-Pn","-T4","--open","-oX","-",self.target]; budget=300
             self._log("Profile: FULL")
         else:
-            args=["nmap","-sS","-F","-sV","--script","vulners","--script-args","mincvss=7.0","-Pn","-T4","--max-rtt-timeout","300ms","--max-retries","1","-n","--open","-oX","-",self.target]
+            args=["nmap","-sT","-F","-sV","--script","vulners","--script-args","mincvss=7.0","-Pn","-T4","--max-rtt-timeout","300ms","--max-retries","1","-n","--open","-oX","-",self.target]
             budget=45; self._log("Profile: FAST")
         self._log("Running: "+" ".join(args))
         try:
