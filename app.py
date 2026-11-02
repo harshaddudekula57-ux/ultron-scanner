@@ -22,7 +22,7 @@ HTML = """
         button:hover, a.btn:hover { background: #00cc00; }
         .result-box { margin-top: 30px; border: 1px solid #00ff00; padding: 20px; background: #111; }
         .vuln-id { color: #ff4444; font-weight: bold; }
-        .vuln-desc { color: #ffaa00; font-size: 0.85em; display: block; margin-top: 5px; margin-bottom: 10px; line-height: 1.4; }
+        .vuln-desc { color: #ffaa00; font-size: 0.85em; display: block; margin-top: 5px; margin-bottom: 15px; line-height: 1.5; border-left: 2px solid #ffaa00; padding-left: 10px; }
         .open { color: #00ff00; }
         ul { list-style-type: none; padding: 0; margin: 5px 0; }
         li { padding: 5px 0; border-bottom: 1px solid #222; }
@@ -90,12 +90,10 @@ def fetch_vulners_data(query_id):
             for doc_id, doc_info in documents.items():
                 if doc_id.startswith("CVE"):
                     cvss_score = doc_info.get("cvss", {}).get("score", "N/A")
-                    # Extract the description from the API payload
-                    desc = doc_info.get("description", "No description provided by Vulners.")
-                    # Clean up the description for display
+                    desc = doc_info.get("description", "No description provided.")
                     desc = desc.replace("\n", " ").strip()
-                    if len(desc) > 300:
-                        desc = desc[:300] + "..."
+                    if len(desc) > 350:
+                        desc = desc[:350] + "..."
                     
                     cves.append({"id": doc_id, "cvss": cvss_score, "description": desc})
         return cves
@@ -133,7 +131,7 @@ def do_scan(target):
 
 @app.route("/")
 def index():
-    return render_template_string(HTML, target="scanme.nmap.org", results=None)
+    return render_template_string(HTML, target="nmap.scanme.org", results=None)
 
 @app.route("/scan")
 def scan():
@@ -159,7 +157,6 @@ def pdf():
             line = f"Port {port}: {info['state']} - {info['service']} {info['version']}"
             story.append(Paragraph(line, styles["Normal"]))
             for cve in info["cves"]:
-                # Add the CVE ID, score, and the description to the PDF
                 story.append(Paragraph(f"  <b>{cve['id']}</b> (CVSS {cve['cvss']})", styles["Normal"]))
                 story.append(Paragraph(f"  <i>{cve['description']}</i>", styles["Normal"]))
                 story.append(Spacer(1, 0.1*inch))
