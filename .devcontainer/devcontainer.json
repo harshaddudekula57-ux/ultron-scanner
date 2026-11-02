@@ -1,1 +1,13 @@
-﻿{"name":"Ultron","image":"mcr.microsoft.com/devcontainers/python:3.11","features":{"ghcr.io/devcontainers-extra/features/nmap-apt-get:1":{}},"forwardPorts":[5000],"portsAttributes":{"5000":{"onAutoForward":"openBrowser"}},"postCreateCommand":"pip install -r requirements.txt && python ultron.py"}
+﻿{
+  "name": "Ultron Scanner",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "features": {
+    "ghcr.io/devcontainers-extra/features/nmap-apt-get:1": {}
+  },
+  "forwardPorts": [5000],
+  "portsAttributes": {
+    "5000": { "onAutoForward": "openBrowser", "label": "Ultron Scanner" }
+  },
+  "postCreateCommand": "pip install flask python-nmap",
+  "postStartCommand": "python app.py"
+}
