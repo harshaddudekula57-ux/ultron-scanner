@@ -7,7 +7,6 @@ from reportlab.lib.units import inch
 
 app = Flask(__name__)
 
-# YOUR PROVIDED API KEY
 VULNERS_API_KEY = "OMOJ4B5C0B68DZIRIOWXHNH0W31DNNIOZ5U73YY5VTCNC5RNE55Z71QZA5YCO1CJ"
 
 HTML = """
@@ -66,7 +65,6 @@ HTML = """
 """
 
 def fetch_vulners_data(query_id):
-    """Makes the exact POST request you provided to the Vulners API"""
     url = "https://vulners.com/api/v3/search/id"
     headers = {
         "X-Api-Key": VULNERS_API_KEY,
@@ -82,13 +80,10 @@ def fetch_vulners_data(query_id):
         response.raise_for_status()
         data = response.json()
         
-        # Parse the response to extract CVEs and titles
         cves = []
         if data.get("result") == "OK":
-            # The API returns data under 'data' -> 'documents'
             documents = data.get("data", {}).get("documents", {})
             for doc_id, doc_info in documents.items():
-                # Filter to just CVE IDs and grab their CVSS scores
                 if doc_id.startswith("CVE"):
                     cvss_score = doc_info.get("cvss", {}).get("score", "N/A")
                     title = doc_info.get("title", "No title available")
@@ -96,11 +91,10 @@ def fetch_vulners_data(query_id):
         return cves
     except Exception as e:
         print(f"API Error: {e}")
-        return [{"id": "API_ERROR", "cvss": "N/A", "title": str(e)}]
+        return []
 
 def do_scan(target):
     nm = nmap.PortScanner()
-    # Run Nmap with service detection
     nm.scan(hosts=target, ports="1-1024,5000", arguments="-sT -sV")
     
     results = {}
@@ -116,9 +110,7 @@ def do_scan(target):
                 version = pinfo.get("version", "")
                 cves = []
                 
-                # If Nmap found a service name, use that to query Vulners
                 if service and service != "unknown":
-                    # Query the API (e.g., searching for "openssh" or "apache")
                     cves = fetch_vulners_data(service)
                     
                 results[host]["ports"][f"{p}/{proto}"] = {
