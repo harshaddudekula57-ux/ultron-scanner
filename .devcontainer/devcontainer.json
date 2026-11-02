@@ -8,6 +8,5 @@
   "portsAttributes": {
     "5000": { "onAutoForward": "openBrowser", "label": "Ultron Scanner" }
   },
-  "postCreateCommand": "pip install flask python-nmap",
-  "postStartCommand": "python app.py"
+  "postCreateCommand": "pip install flask python-nmap reportlab requests"
 }
