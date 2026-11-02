@@ -4,6 +4,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
+from reportlab.lib import colors
 
 app = Flask(__name__)
 
@@ -21,9 +22,14 @@ HTML = """
         button, a.btn { background: #00ff00; color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; font-family: inherit; text-decoration: none; display: inline-block; margin-left: 10px; }
         button:hover, a.btn:hover { background: #00cc00; }
         .result-box { margin-top: 30px; border: 1px solid #00ff00; padding: 20px; background: #111; }
-        .vuln-id { color: #ff4444; font-weight: bold; }
-        .vuln-desc { color: #ffaa00; font-size: 0.85em; display: block; margin-top: 5px; margin-bottom: 15px; line-height: 1.5; border-left: 2px solid #ffaa00; padding-left: 10px; }
-        .open { color: #00ff00; }
+        
+        .cve-card { background: #1a0000; border: 1px solid #ff4444; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+        .cve-id { color: #ff4444; font-weight: bold; font-size: 1.1em; }
+        .cvss { color: #ffaa00; font-weight: bold; margin-left: 10px; }
+        .attack-type { color: #00ffff; font-weight: bold; font-size: 0.9em; margin-top: 5px; display: block; }
+        .impact { color: #cccccc; font-size: 0.85em; margin-top: 5px; display: block; line-height: 1.4; }
+        
+        .open { color: #00ff00; font-weight: bold; }
         ul { list-style-type: none; padding: 0; margin: 5px 0; }
         li { padding: 5px 0; border-bottom: 1px solid #222; }
     </style>
@@ -41,17 +47,20 @@ HTML = """
                 <h3>Host: {{ host }} ({{ data.state|upper }})</h3>
                 <ul>
                 {% for port, info in data.ports.items() %}
-                    <li>Port {{ port }} : <span class="open">{{ info.state|upper }}</span> {{ info.service }} {{ info.version }}
-                    {% if info.cves %}
-                        <ul>
-                        {% for cve in info.cves %}
-                            <li>
-                                <span class="vuln-id">⚠ {{ cve.id }} (CVSS: {{ cve.cvss }})</span>
-                                <span class="vuln-desc">{{ cve.description }}</span>
-                            </li>
-                        {% endfor %}
-                        </ul>
-                    {% endif %}
+                    <li>
+                        Port {{ port }} : <span class="open">{{ info.state|upper }}</span> {{ info.service }} {{ info.version }}
+                        {% if info.cves %}
+                            <div style="margin-top: 10px;">
+                            {% for cve in info.cves %}
+                                <div class="cve-card">
+                                    <span class="cve-id">{{ cve.id }}</span>
+                                    <span class="cvss">CVSS: {{ cve.cvss }}</span>
+                                    <span class="attack-type">⚔ Attack Type: {{ cve.attack }}</span>
+                                    <span class="impact">Impact: {{ cve.description }}</span>
+                                </div>
+                            {% endfor %}
+                            </div>
+                        {% endif %}
                     </li>
                 {% else %}
                     <li>No open ports found.</li>
@@ -70,17 +79,11 @@ HTML = """
 
 def fetch_vulners_data(query_id):
     url = "https://vulners.com/api/v3/search/id"
-    headers = {
-        "X-Api-Key": VULNERS_API_KEY,
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "id": query_id,
-        "fields": ["*"]
-    }
+    headers = {"X-Api-Key": VULNERS_API_KEY, "Content-Type": "application/json"}
+    payload = {"id": query_id, "fields": ["*"]}
     
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
         response.raise_for_status()
         data = response.json()
         
@@ -89,13 +92,46 @@ def fetch_vulners_data(query_id):
             documents = data.get("data", {}).get("documents", {})
             for doc_id, doc_info in documents.items():
                 if doc_id.startswith("CVE"):
-                    cvss_score = doc_info.get("cvss", {}).get("score", "N/A")
-                    desc = doc_info.get("description", "No description provided.")
+                    # Robust extraction of CVSS and description
+                    cvss_score = "N/A"
+                    if isinstance(doc_info.get("cvss"), dict):
+                        cvss_score = doc_info["cvss"].get("score", "N/A")
+                    elif doc_info.get("cvss3"):
+                        cvss_score = doc_info["cvss3"].get("cvss3", {}).get("baseScore", "N/A")
+
+                    desc = doc_info.get("description", "No description available.")
                     desc = desc.replace("\n", " ").strip()
-                    if len(desc) > 350:
-                        desc = desc[:350] + "..."
                     
-                    cves.append({"id": doc_id, "cvss": cvss_score, "description": desc})
+                    # Extract the "Attack Type" from the description based on common keywords
+                    attack = "Unknown / General Vulnerability"
+                    desc_lower = desc.lower()
+                    if "remote code execution" in desc_lower or "rce" in desc_lower:
+                        attack = "Remote Code Execution (RCE)"
+                    elif "denial of service" in desc_lower or "dos" in desc_lower:
+                        attack = "Denial of Service (DoS)"
+                    elif "sql injection" in desc_lower:
+                        attack = "SQL Injection (SQLi)"
+                    elif "cross-site scripting" in desc_lower or "xss" in desc_lower:
+                        attack = "Cross-Site Scripting (XSS)"
+                    elif "buffer overflow" in desc_lower or "heap overflow" in desc_lower:
+                        attack = "Buffer Overflow / Memory Corruption"
+                    elif "privilege escalation" in desc_lower:
+                        attack = "Privilege Escalation"
+                    elif "information disclosure" in desc_lower or "leak" in desc_lower:
+                        attack = "Information Disclosure"
+                    elif "authentication bypass" in desc_lower:
+                        attack = "Authentication Bypass"
+
+                    # Truncate description so it fits nicely in the UI
+                    if len(desc) > 400:
+                        desc = desc[:400] + "..."
+                    
+                    cves.append({
+                        "id": doc_id, 
+                        "cvss": cvss_score, 
+                        "attack": attack,
+                        "description": desc
+                    })
         return cves
     except Exception as e:
         print(f"API Error: {e}")
@@ -103,6 +139,7 @@ def fetch_vulners_data(query_id):
 
 def do_scan(target):
     nm = nmap.PortScanner()
+    # Perform Nmap scan
     nm.scan(hosts=target, ports="1-1024,5000", arguments="-sT -sV")
     
     results = {}
@@ -118,6 +155,7 @@ def do_scan(target):
                 version = pinfo.get("version", "")
                 cves = []
                 
+                # Fetch CVEs for the service found on the port
                 if service and service != "unknown":
                     cves = fetch_vulners_data(service)
                     
@@ -157,9 +195,10 @@ def pdf():
             line = f"Port {port}: {info['state']} - {info['service']} {info['version']}"
             story.append(Paragraph(line, styles["Normal"]))
             for cve in info["cves"]:
-                story.append(Paragraph(f"  <b>{cve['id']}</b> (CVSS {cve['cvss']})", styles["Normal"]))
-                story.append(Paragraph(f"  <i>{cve['description']}</i>", styles["Normal"]))
-                story.append(Spacer(1, 0.1*inch))
+                story.append(Paragraph(f"<b>{cve['id']}</b> (CVSS {cve['cvss']})", styles["Normal"]))
+                story.append(Paragraph(f"<font color='#00cc00'>Attack Type: {cve['attack']}</font>", styles["Normal"]))
+                story.append(Paragraph(f"<i>{cve['description']}</i>", styles["Normal"]))
+                story.append(Spacer(1, 0.15*inch))
             story.append(Spacer(1, 0.1*inch))
             
     doc.build(story)
