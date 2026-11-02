@@ -1,13 +1,11 @@
 ﻿from flask import Flask, request, render_template_string, send_file
-import nmap, io, requests
+import nmap, io, requests, socket
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 
 app = Flask(__name__)
-
-VULNERS_API_KEY = "OMOJ4B5C0B68DZIRIOWXHNH0W31DNNIOZ5U73YY5VTCNC5RNE55Z71QZA5YCO1CJ"
 
 HTML = """
 <!DOCTYPE html>
@@ -21,6 +19,8 @@ HTML = """
         button, a.btn { background: #00ff00; color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; font-family: inherit; text-decoration: none; display: inline-block; margin-left: 10px; }
         button:hover, a.btn:hover { background: #00cc00; }
         .result-box { margin-top: 30px; border: 1px solid #00ff00; padding: 20px; background: #111; }
+        
+        .error-box { color: #ff4444; font-weight: bold; font-size: 1.2em; border: 1px solid #ff4444; padding: 15px; background: #220000; }
         
         .cve-card { background: #1a0000; border: 1px solid #ff4444; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
         .cve-id { color: #ff4444; font-weight: bold; font-size: 1.1em; }
@@ -40,7 +40,9 @@ HTML = """
         <button type="submit">EXECUTE</button>
     </form>
     <div class="result-box">
-        {% if results %}
+        {% if error %}
+            <div class="error-box">[!] {{ error }}</div>
+        {% elif results %}
             <h2>RESULTS: {{ target }}</h2>
             {% for host, data in results.items() %}
                 <h3>Host: {{ host }} ({{ data.state|upper }})</h3>
@@ -76,135 +78,114 @@ HTML = """
 </html>
 """
 
-def get_fallback_cves(service, version):
-    """If the API fails, we return known CVEs based on the version"""
-    cves = []
-    if service == "ssh" and "6.6.1" in version:
-        cves.append({
-            "id": "CVE-2016-6210",
-            "cvss": "5.3",
-            "attack": "Information Disclosure / User Enumeration",
-            "description": "sshd in OpenSSH 7.2p2 and earlier allows remote attackers to conduct user enumeration attacks via a crafted password. This affects Ubuntu 14.04 (which uses OpenSSH 6.6.1p1)."
-        })
-        cves.append({
-            "id": "CVE-2016-10708",
-            "cvss": "7.5",
-            "attack": "Denial of Service (DoS)",
-            "description": "sshd in OpenSSH 7.2p2 and earlier allows remote attackers to cause a denial of service (NULL pointer dereference and daemon crash) via an out-of-sequence NEWKEYS message."
-        })
-    elif service == "http" and "2.4.7" in version:
-        cves.append({
-            "id": "CVE-2014-0226",
-            "cvss": "6.8",
-            "attack": "Race Condition / Denial of Service",
-            "description": "Race condition in the mod_status module in the Apache HTTP Server before 2.4.10 allows remote attackers to cause a denial of service (heap-based buffer overflow and daemon crash)."
-        })
-        cves.append({
-            "id": "CVE-2014-0118",
-            "cvss": "5.0",
-            "attack": "Denial of Service (DoS)",
-            "description": "The deflate_in_filter function in mod_deflate.c in the mod_deflate module in the Apache HTTP Server before 2.4.10 allows remote attackers to cause a denial of service."
-        })
-    return cves
-
-def fetch_vulners_data(service, version):
-    # Map Nmap service names to Vulners API product names
-    query_id = service
-    if service == "ssh": query_id = "openssh"
-    elif service == "http": query_id = "apache"
-    elif service == "https": query_id = "apache"
-    
-    url = "https://vulners.com/api/v3/search/id"
-    headers = {"X-Api-Key": VULNERS_API_KEY, "Content-Type": "application/json"}
-    payload = {"id": query_id, "fields": ["*"]}
-    
+def validate_target(target):
+    """Checks if the domain/IP actually exists before scanning"""
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        socket.gethostbyname(target)
+        return True
+    except socket.gaierror:
+        return False
+
+def generate_dynamic_cve(service, version):
+    """Generates a dynamic vulnerability summary based on the detected software and version"""
+    if not service or service == "unknown":
+        return []
         
-        cves = []
-        if data.get("result") == "OK":
-            documents = data.get("data", {}).get("documents", {})
-            for doc_id, doc_info in documents.items():
-                if doc_id.startswith("CVE"):
-                    cvss_score = "N/A"
-                    if isinstance(doc_info.get("cvss"), dict):
-                        cvss_score = doc_info["cvss"].get("score", "N/A")
-                    
-                    desc = doc_info.get("description", "No description available.")
-                    desc = desc.replace("\n", " ").strip()
-                    
-                    attack = "Unknown / General Vulnerability"
-                    desc_lower = desc.lower()
-                    if "remote code execution" in desc_lower or "rce" in desc_lower:
-                        attack = "Remote Code Execution (RCE)"
-                    elif "denial of service" in desc_lower or "dos" in desc_lower:
-                        attack = "Denial of Service (DoS)"
-                    elif "buffer overflow" in desc_lower:
-                        attack = "Buffer Overflow / Memory Corruption"
-                    elif "information disclosure" in desc_lower or "leak" in desc_lower:
-                        attack = "Information Disclosure"
-                    
-                    if len(desc) > 300:
-                        desc = desc[:300] + "..."
-                    
-                    cves.append({"id": doc_id, "cvss": cvss_score, "attack": attack, "description": desc})
+    desc = f"The service {service} running version {version} was detected. "
+    attack = "Information Gathering / Misconfiguration"
+    
+    # Dynamic logic based on the detected service
+    if service in ["http", "https", "apache", "nginx"]:
+        attack = "Web Application Attack Surface"
+        desc += "This web server may be vulnerable to Cross-Site Scripting (XSS), SQL Injection (SQLi), or directory traversal if outdated. Ensure security headers and patches are up to date."
+    elif service in ["ssh", "openssh"]:
+        attack = "Brute Force / Information Disclosure"
+        desc += "SSH is exposed. While modern versions are secure, outdated versions may allow user enumeration or Denial of Service (DoS) via malformed packets."
+    elif service in ["ftp"]:
+        attack = "Unauthorized Access / Data Leak"
+        desc += "FTP transmits data in plaintext. If anonymous login is enabled, this could lead to unauthorized file access or data leakage."
+    elif service in ["mysql", "postgresql", "mssql", "redis"]:
+        attack = "Database Exploitation"
+        desc += "A database port is exposed to the public. This is highly dangerous. If authentication is bypassed, attackers can exfiltrate or delete sensitive data."
+    else:
+        desc += "This service is exposed to the network. Ensure it is patched to the latest version and protected by a firewall."
         
-        # If API returns nothing useful, use fallback
-        if not cves:
-            cves = get_fallback_cves(service, version)
-            
-        return cves
-    except Exception as e:
-        print(f"API Error: {e}")
-        return get_fallback_cves(service, version)
+    return [{
+        "id": "VULN-ANALYSIS",
+        "cvss": "VARIES",
+        "attack": attack,
+        "description": desc
+    }]
 
 def do_scan(target):
+    # 1. Validate Target first
+    if not validate_target(target):
+        return {"error": "URL / Target is Invalid or Offline. Could not resolve hostname."}
+
     nm = nmap.PortScanner()
-    nm.scan(hosts=target, ports="1-1024,5000", arguments="-sT -sV")
+    # 2. Scan target
+    try:
+        nm.scan(hosts=target, ports="1-1024,5000", arguments="-sT -sV --host-timeout 30s")
+    except Exception:
+        return {"error": "Scan failed or timed out."}
     
     results = {}
+    host_up = False
+    
     for host in nm.all_hosts():
-        results[host] = {"state": nm[host].state(), "ports": {}}
-        for proto in nm[host].all_protocols():
-            for p in nm[host][proto]:
-                pinfo = nm[host][proto][p]
-                if pinfo["state"] != "open":
-                    continue
-                
-                service = pinfo.get("name", "unknown")
-                version = pinfo.get("version", "")
-                cves = []
-                
-                if service and service != "unknown":
-                    cves = fetch_vulners_data(service, version)
+        if nm[host].state() == "up":
+            host_up = True
+            results[host] = {"state": nm[host].state(), "ports": {}}
+            for proto in nm[host].all_protocols():
+                for p in nm[host][proto]:
+                    pinfo = nm[host][proto][p]
+                    if pinfo["state"] != "open":
+                        continue
                     
-                results[host]["ports"][f"{p}/{proto}"] = {
-                    "state": pinfo["state"],
-                    "service": service,
-                    "version": version,
-                    "cves": cves
-                }
+                    service = pinfo.get("name", "unknown")
+                    version = pinfo.get("version", "")
+                    
+                    # 3. Use dynamic logic so *every* target gets a summary
+                    cves = generate_dynamic_cve(service, version)
+                        
+                    results[host]["ports"][f"{p}/{proto}"] = {
+                        "state": pinfo["state"],
+                        "service": service,
+                        "version": version,
+                        "cves": cves
+                    }
+                    
+    if not host_up:
+        return {"error": "Target is offline or blocked by a firewall."}
+        
     return results
 
 @app.route("/")
 def index():
-    return render_template_string(HTML, target="nmap.scanme.org", results=None)
+    return render_template_string(HTML, target="", results=None, error=None)
 
 @app.route("/scan")
 def scan():
-    target = request.args.get("target", "127.0.0.1")
+    target = request.args.get("target", "")
+    if not target:
+        return render_template_string(HTML, target="", results=None, error="Please enter a target.")
+        
     try:
         results = do_scan(target)
+        if "error" in results:
+            return render_template_string(HTML, target=target, results=None, error=results["error"])
     except Exception as e:
-        return f"<h3 style='color:red;'>Error: {str(e)}</h3>"
-    return render_template_string(HTML, target=target, results=results)
+        return render_template_string(HTML, target=target, results=None, error=str(e))
+        
+    return render_template_string(HTML, target=target, results=results, error=None)
 
 @app.route("/pdf")
 def pdf():
-    target = request.args.get("target", "127.0.0.1")
+    target = request.args.get("target", "")
     results = do_scan(target)
+    if "error" in results:
+        return f"<h3>Error: {results['error']}</h3>"
+        
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4)
     styles = getSampleStyleSheet()
